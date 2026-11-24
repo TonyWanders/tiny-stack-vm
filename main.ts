@@ -1,27 +1,22 @@
 // Tiny stack VM for make.fun tiny-stack-vm-01-run-20261122.
-// Faithful interpreter of the kit ISA: 32-bit wrapping ints, 256-value stack,
-// 256 words of memory, ten traps, 1,000,000 step limit, 65,536 byte output cap.
-// Where ISA.md and the reference VM could be read two ways, this follows vm.mjs exactly.
+// Faithful interpreter of the kit ISA (ISA.md, reference vm.mjs): 32-bit
+// wrapping ints, 256-value stack, 256 words of memory, ten traps with their
+// own exit codes, 1,000,000 step limit, 65,536 byte output cap. Where the ISA
+// text and vm.mjs could be read two ways, this follows vm.mjs exactly.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Opcode table: immediate length, values popped, values pushed. -1 means no
-// such opcode. Indexed by opcode byte.
+// Opcode table, encoded as 5 characters per opcode: 2 hex digits of the
+// opcode byte, then immediate bytes, values popped, values pushed (each 0-4).
+// Decodes into IMM (immediate bytes, -1: no such opcode), POP and PSH.
 const IMM = new Int8Array(256).fill(-1);
 const POP = new Int8Array(256);
 const PSH = new Int8Array(256);
-for (const [b, i, p, q] of [
-  [0x00, 0, 0, 0], [0x01, 1, 0, 1], [0x02, 4, 0, 1], [0x03, 0, 1, 0],
-  [0x04, 0, 1, 2], [0x05, 0, 2, 2], [0x06, 0, 2, 3], [0x07, 0, 3, 3],
-  [0x10, 0, 2, 1], [0x11, 0, 2, 1], [0x12, 0, 2, 1], [0x13, 0, 2, 1],
-  [0x14, 0, 2, 1], [0x15, 0, 2, 1], [0x16, 0, 2, 1], [0x17, 0, 1, 1],
-  [0x18, 0, 2, 1], [0x19, 0, 2, 1], [0x1a, 0, 2, 1], [0x1b, 0, 1, 1],
-  [0x1c, 0, 2, 1], [0x1d, 0, 2, 1], [0x1e, 0, 2, 1], [0x20, 0, 2, 1],
-  [0x21, 0, 2, 1], [0x22, 0, 2, 1], [0x30, 2, 0, 0], [0x31, 2, 1, 0],
-  [0x32, 2, 1, 0], [0x33, 2, 0, 0], [0x34, 0, 0, 0], [0x40, 0, 1, 1],
-  [0x41, 0, 2, 0], [0x50, 0, 1, 0], [0x51, 0, 1, 0], [0x52, 0, 0, 1],
-  [0x53, 0, 1, 0],
-]) { IMM[b] = i; POP[b] = p; PSH[b] = q; }
+const T = '0000001101024010301004012050220602307033100211102112021130211402115021160211701118021190211a0211b0111c0211d0211e0212002121021220213020031210322103320034000400114102050010510105200153010';
+for (let k = 0; k < T.length; k += 5) {
+  const b = parseInt(T.slice(k, k + 2), 16);
+  IMM[b] = +T[k + 2]; POP[b] = +T[k + 3]; PSH[b] = +T[k + 4];
+}
 
 // Run one program on its input. Returns { o: output bytes, c: exit code }.
 function run(p, inp) {
@@ -177,12 +172,9 @@ function run(p, inp) {
 
 const I = process.env.MAKEFUN_INPUT_DIR ?? '/input';
 const O = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const rd = (f) => { try { return readFileSync(f); } catch { return new Uint8Array(0); } };
 for (const id of readdirSync(I).sort()) {
-  let prog = new Uint8Array(0);
-  let inp = new Uint8Array(0);
-  try { prog = readFileSync(join(I, id, 'program.bin')); } catch {}
-  try { inp = readFileSync(join(I, id, 'input.bin')); } catch {}
-  const r = run(prog, inp);
+  const r = run(rd(join(I, id, 'program.bin')), rd(join(I, id, 'input.bin')));
   mkdirSync(join(O, id), { recursive: true });
   writeFileSync(join(O, id, 'stdout.bin'), r.o);
   writeFileSync(join(O, id, 'exit.txt'), String(r.c) + '\n');
